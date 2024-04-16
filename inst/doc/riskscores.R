@@ -10,6 +10,8 @@ library(dplyr)
 library(ggplot2)
 library(magrittr)
 
+set.seed(1)
+
 
 ## ----setup--------------------------------------------------------------------
 library(riskscores)
@@ -19,8 +21,8 @@ library(riskscores)
 #  
 
 ## -----------------------------------------------------------------------------
-y <- breastcancer[[1]]
-X <- as.matrix(breastcancer[,2:ncol(breastcancer)])
+y <- breastcancer[,1]
+X <- as.matrix(breastcancer[,-1])
 
 
 ## -----------------------------------------------------------------------------
@@ -58,6 +60,11 @@ mod$score_map %>%
 ## -----------------------------------------------------------------------------
 get_risk(mod, score = 125)
 
+get_score(mod, risk = 0.7765)
+
+## -----------------------------------------------------------------------------
+get_metrics(mod, threshold = seq(0.1, 0.9, 0.1))
+
 ## -----------------------------------------------------------------------------
 summary(mod)
 
@@ -84,12 +91,12 @@ response <- predict(mod, type = "response")[1:5] %>%
 score <- predict(mod, type = "score")[1:5]
 
 data.frame(X[1:5,which(dimnames(X)[[2]] %in% c("ClumpThickness",
-                                             "BareNuclei",
-                                             "BlandChromatin"))],
+                                             "UniformityOfCellShape",
+                                             "BareNuclei"))],
                        score, link, response) %>%
   kable("html",
         booktabs = T,
-        col.names = c("CT","BN", "BC", 
+        col.names = c("CT","UCS", "BN", 
                      "'score'", "'link'", "'response'"),
         caption = "Comparison of `predict()` outputs") %>%
   kable_styling("striped", full_width = F) %>%

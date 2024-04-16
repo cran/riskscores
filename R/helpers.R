@@ -1,59 +1,118 @@
 #' Get Model Metrics
 #'
-#' Calculates a risk model's deviance, accuracy, sensitivity, and specificity
+#' Calculates a risk model's accuracy, sensitivity, and specificity
 #' given a set of data.
 #' @param mod An object of class `risk_mod`, usually a result of a call to
 #'  [risk_mod()].
+#' @param threshold Numeric vector of classification threshold values used to
+#'  calculate the accuracy, sensitivity, and specificity of the model. Defaults
+#'  to a range of risk probability thresholds from 0.1 to 0.9 by 0.1.
+#' @param threshold_type Defines whether the `threshold` vector contains
+#'  risk probability values ("response") or threshold values expressed as scores
+#'  from the risk score model ("score"). Default: "response".
 #' @inheritParams risk_mod
-#' @return List with deviance (dev), accuracy (acc), sensitivity (sens), and
-#'  specificity (spec).
+#' @return Data frame with accuracy, sensitivity, and specificity for each threshold.
 #' @examples
 #' y <- breastcancer[[1]]
 #' X <- as.matrix(breastcancer[,2:ncol(breastcancer)])
 #'
 #' mod <- risk_mod(X, y)
 #' get_metrics(mod, X, y)
+#'
+#' get_metrics(mod, X, y, threshold = c(150, 175, 200), threshold_type = "score")
 #' @export
-get_metrics <- function(mod, X = NULL, y = NULL, weights = NULL){
+get_metrics <- function(mod, X = NULL, y = NULL, weights = NULL,
+                        threshold = NULL, threshold_type = c("response", "score")) {
 
-  # Check if new data
-  if (is.null(X)+is.null(y) == 1) stop("Must provide both X and y")
-  if (is.null(X) & is.null(y)){
-    X = mod$X
-    y = mod$y
+  threshold_type <- match.arg(threshold_type)
+
+  if (is.null(threshold)) {
+    threshold <- seq(0.1, 0.9, 0.1)
+    threshold_type <- "response"
   }
 
-  # Add intercept column
-  if (!all(X[,1] == rep(1, nrow(X)))) {
-    X <- cbind(rep(1, nrow(X)), X)
+  metrics <- data.frame(threshold_risk = threshold,
+                        threshold_score = threshold,
+                        accuracy = rep(NA, length(threshold)),
+                        sensitivity = rep(NA, length(threshold)),
+                        specificity = rep(NA, length(threshold)))
+
+  for (i in 1:length(threshold)) {
+
+    res <- get_metrics_internal(mod, X, y, weights, threshold[i], threshold_type)
+    metrics[i,] <- c(threshold[i], threshold[i], res$acc, res$sens, res$spec)
+
   }
 
-  # Check compatibility
-  if (nrow(X) != length(y)) stop("X and y must match in number of observations")
-  if (ncol(X) != length(mod$beta)) stop("X is incompatible with the model")
-  if (sum(! (y %in% c(0,1)))) stop("y must be 0/1 valued")
+  if (threshold_type == "score") {
+    metrics$threshold_risk <- round(get_risk(mod, metrics$threshold_score),3)
+  } else if (threshold_type == "response") {
+    metrics$threshold_score <- round(get_score(mod, metrics$threshold_risk),1)
+  }
 
-  # Get predicted probs and classes
-  v <- mod$gamma * X %*% mod$beta
-  v <- clip_exp_vals(v)
-  p <- exp(v)/(1+exp(v))
-  pred <- ifelse(p>=0.5, 1, 0)
+  return(metrics)
 
-  # Deviance
-  dev <- -2*sum(y*log(p)+(1-y)*log(1-p))
+}
 
-  # Confusion matrix
-  tp <- sum(pred == 1 & y == 1)
-  tn <- sum(pred == 0 & y == 0)
-  fp <- sum(pred == 1 & y == 0)
-  fn <- sum(pred == 0 & y == 1)
+#' Calculate Risk Probability from Score
+#'
+#' Returns the risk probabilities for the provided score value(s).
+#' @param object An object of class "risk_mod", usually a result of a call to
+#'  [risk_mod()].
+#' @param score Numeric vector with score value(s).
+#' @return Numeric vector with the same length as `score`.
+#' @examples
+#' y <- breastcancer[[1]]
+#' X <- as.matrix(breastcancer[,2:ncol(breastcancer)])
+#'
+#' mod <- risk_mod(X, y)
+#' get_risk(mod, score = c(1, 10, 20))
+#'
+#' @export
+get_risk <- function(object, score) {
 
-  # Accuracy values
-  acc <- (tp+tn)/(tp+tn+fp+fn)
-  sens <- tp/(tp+fn)
-  spec <- tn/(tn+fp)
+  # Check that object is "risk_mod"
+  if (!inherits(object, "risk_mod"))
+    stop("'object' must be of class 'risk_mod'")
 
-  return(list(dev = dev, acc=acc, sens=sens, spec=spec))
+  risk <- exp(object$gamma*(object$beta[[1]] + score))/
+    (1+exp(object$gamma*(object$beta[[1]] + score)))
+
+  return(risk)
+
+}
+
+#' Calculate Score from Risk Probability
+#'
+#' Returns the score(s) for the provided risk probabilities.
+#' @param object An object of class "risk_mod", usually a result of a call to
+#'  [risk_mod()].
+#' @param risk Numeric vector with probability value(s).
+#' @return Numeric vector with the same length as `risk`.
+#' @examples
+#' y <- breastcancer[[1]]
+#' X <- as.matrix(breastcancer[,2:ncol(breastcancer)])
+#'
+#' mod <- risk_mod(X, y)
+#' get_score(mod, risk = c(0.25, 0.50, 0.75))
+#'
+#' @export
+get_score <- function(object, risk) {
+
+  # Check that object is "risk_mod"
+  if (!inherits(object, "risk_mod"))
+    stop("'object' must be of class 'risk_mod'")
+
+  # Check that risk is between 0 and 1
+  if (any(risk <=0) | any(risk >= 1))
+    stop("'risk' must contain values between 0 and 1")
+
+  logit_p <- log(risk/(1-risk))
+
+  score <- (1/object$gamma) * logit_p - object$beta[[1]]
+
+  return(score)
+
 }
 
 #' Generate Stratified Fold IDs
@@ -93,34 +152,188 @@ stratify_folds <- function(y, nfolds = 10, seed = NULL) {
   foldids[index_y1] <- folds_y1
 
   return(foldids)
+
 }
 
-#' Calculate Risk Probability from Score
+#' Run risk model with random start
 #'
-#' Returns the risk probabilities for the provided score value(s).
-#' @param object An object of class "risk_mod", usually a result of a call to
-#'  [risk_mod()].
-#' @param score Numeric vector with score value(s).
-#' @return Numeric vector with the same length as `score`.
-#' @examples
-#' y <- breastcancer[[1]]
-#' X <- as.matrix(breastcancer[,2:ncol(breastcancer)])
-#'
-#' mod <- risk_mod(X, y)
-#' get_risk(mod, score = c(1, 10, 20))
-#'
+#' Runs `nstart` iterations of `risk_mod()`, each with a different
+#' warm start, and selects the best model. Each coefficient start is
+#' randomly selected as -1, 0, or 1.
+#' @inheritParams risk_mod
+#' @param nstart Number of different random starts to try
+#' (default: 5).
 #' @export
-get_risk <- function(object, score) {
+risk_mod_random_start <- function(X, y, weights = NULL,
+                                  lambda0 = 0, a = -10, b = 10,
+                                  max_iters = 100, tol= 1e-5,
+                                  seed = NULL, nstart = 5) {
+  # Set seed
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
 
-  # Check that object is "risk_mod"
-  if (!inherits(object, "risk_mod"))
-    stop("'object' must be of class 'risk_mod'")
+  # Initialize best model and objective function value
+  best_mod <- NULL
+  best_objective <- 99999999
 
-  risk <- exp(object$gamma*(object$beta[[1]] + score))/
-    (1+exp(object$gamma*(object$beta[[1]] + score)))
+  for (i in 1:nstart) {
 
-  return(risk)
+    # Randomly choose coefficient values
+    beta <- sample(c(-1,0,1), ncol(X), replace = TRUE)
 
+    # Run risk_mod
+    mod <- risk_mod(X, y, gamma = NULL, beta = beta, weights = weights,
+                    lambda0 = lambda0, a = a, b = b, max_iters = max_iters,
+                    tol = tol)
+
+    # Calculate objective function
+    objective <- obj_fcn(X, y, gamma = mod$gamma, beta = mod$beta,
+                         weights = mod$weights, lambda0 = mod$lambda0)
+
+    # Save model if lowest objective value
+    if (objective < best_objective) {
+      best_mod <- mod
+      best_dev <- objective
+    }
+  }
+  return(best_mod)
 }
 
+#' Run Cross-Validation to Tune Lambda0 with Random Start
+#'
+#' Runs k-fold cross-validation on a grid of \eqn{\lambda_0} values
+#'  using random warm starts (see \link{risk_mod_random_start}. Records
+#'  class accuracy and deviance for each \eqn{\lambda_0}. Returns an
+#'  object of class "cv_risk_mod".
+#' @inheritParams cv_risk_mod
+#' @param nstart Number of different random starts to try
+#' (default: 5).
+#' @importFrom foreach %dopar%
+#' @export
+cv_risk_mod_random_start <- function(X, y, weights = NULL, a = -10, b = 10,
+                        max_iters = 100, tol= 1e-5, nlambda = 25,
+                        lambda_min_ratio = ifelse(nrow(X) < ncol(X), 0.01, 1e-04),
+                        lambda0 = NULL, nfolds = 10, foldids = NULL, parallel = FALSE,
+                        seed = NULL, nstart = 5) {
+
+  # Set seed
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+
+  # Check that X is a matrix
+  if (!is.matrix(X)) stop ("X must be a matrix")
+
+  # Add intercept column
+  if (!all(X[,1] == rep(1, nrow(X)))) {
+    X <- cbind(rep(1, nrow(X)), X)
+  }
+
+  # Get folds
+  if (is.null(foldids) & is.null(nfolds)) stop("Must provide foldids or nfolds")
+  if (is.null(foldids)){
+    foldids <- sample(rep(seq(nfolds), length = nrow(X)))
+  } else {
+    nfolds <- max(foldids)
+  }
+
+  # Check at least 3 folds
+  if (nfolds <= 3) stop("Must have more than 3 folds")
+
+  # Check no numeric issues
+  if (length(y) != nrow(X)) stop("y and X non-compatible")
+
+  # Check that outcome is 0/1
+  if (!all(sort(unique(y)) == c(0,1))) stop ("y must contain values of 0 and 1")
+
+  # Get lambda sequence
+  if (is.null(lambda0)){
+    sd_n <- function(y) sqrt(sum((y-mean(y))^2)/length(y))
+
+    X_scaled <- scale(X[,-1], scale=apply(X[,-1], 2, sd_n))
+    X_scaled <- as.matrix(X_scaled, ncol = ncol(X[,-1]), nrow = nrow(X[,-1]))
+    y_weighted <- ifelse(y==0, -mean(y == 1), mean(y == 0))
+
+    lambda_max <- max(abs(colSums(X_scaled*y_weighted)), na.rm = TRUE)/length(y_weighted)
+    lambda0 <- exp(seq(log(lambda_max), log(lambda_max * lambda_min_ratio),
+                       length.out=nlambda))
+  }
+
+  num_lambda0 <- length(lambda0)
+  if (num_lambda0 < 2) stop("Need at least two values for lambda0")
+
+
+  # Results data frame
+  res_df <- data.frame(lambda0 = rep(lambda0, nfolds),
+                       fold = sort(rep(1:nfolds, num_lambda0)),
+                       dev = rep(0, nfolds*num_lambda0),
+                       acc = rep(0, nfolds*num_lambda0),
+                       non_zeros = rep(0, nfolds*num_lambda0))
+
+
+  # Function to run for single fold and lambda0
+  fold_fcn <- function(l0, foldid){
+
+    X_train <- X[foldids != foldid, ]
+    y_train <- y[foldids != foldid]
+    weight_train <- weights[foldids != foldid]
+
+    mod <- risk_mod_random_start(X_train, y_train,
+                    weights = weight_train, lambda0 = l0, a = a, b = b,
+                    max_iters = max_iters, tol= 1e-5)
+    res <- get_metrics_internal(mod, X[foldids == foldid,], y[foldids == foldid])
+    non_zeros <- sum(mod$beta != 0)
+    return(c(res$dev, res$acc, non_zeros))
+  }
+
+  # Run through all folds
+  # Parallel Programming. ! Must register parallel beforehand
+  i = NULL # set global variable
+  if (parallel) {
+
+    outlist = foreach::foreach(i = 1:nrow(res_df)) %dopar%
+      {
+        fold_fcn(res_df[i,1],res_df[i,2])
+      }
+    res_df[,3:5] <- base::t(sapply(1:nrow(res_df), function(i) res_df[i,3:5] <- outlist[[i]]))
+  } else {
+
+    res_df[,3:5] <- base::t(sapply(1:nrow(res_df),
+                                   function(i) fold_fcn(res_df$lambda0[i],
+                                                        res_df$fold[i])))
+  }
+
+
+  # Summarize
+  dev = acc = NULL # set global variables
+  res_df_summary <- res_df %>%
+    dplyr::group_by(lambda0) %>%
+    dplyr::summarize(mean_dev = mean(dev), sd_dev = stats::sd(dev),
+                     mean_acc = mean(acc), sd_acc = stats::sd(acc))
+
+  # Find number of nonzero coefficients when fit on full data
+  full_fcn <- function(l0) {
+    mod <- risk_mod(X, y,  gamma = NULL, beta = NULL,
+                    weights = weights, lambda0 = l0, a = a, b = b,
+                    max_iters = max_iters, tol= 1e-5)
+    non_zeros <- sum(mod$beta[-1] != 0)
+    return(c(non_zeros))
+  }
+
+  res_df_summary$nonzero <- sapply(1:nrow(res_df_summary),
+                                   function(i) full_fcn(res_df_summary$lambda0[i]))
+
+  # Find lambda_min and lambda1_se for deviance
+  lambda_min_ind <- which.min(res_df_summary$mean_dev)
+  lambda_min <- res_df_summary$lambda0[lambda_min_ind]
+  min_dev_1se <- res_df_summary$mean_dev[lambda_min_ind] +
+    res_df_summary$sd_dev[lambda_min_ind]
+  lambda_1se <- res_df_summary$lambda0[max(which(res_df_summary$mean_dev <= min_dev_1se))]
+
+  cv_obj <- list(results = res_df_summary, lambda_min = lambda_min,
+                 lambda_1se =lambda_1se)
+  class(cv_obj) <- "cv_risk_mod"
+  return(cv_obj)
+}
 

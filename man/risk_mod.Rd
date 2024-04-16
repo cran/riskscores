@@ -14,7 +14,9 @@ risk_mod(
   a = -10,
   b = 10,
   max_iters = 100,
-  tol = 1e-05
+  tol = 1e-05,
+  shuffle = TRUE,
+  seed = NULL
 )
 }
 \arguments{
@@ -43,6 +45,13 @@ See \code{\link[=cv_risk_mod]{cv_risk_mod()}} for \code{lambda0} tuning.}
 \item{max_iters}{Maximum number of iterations (default: 100).}
 
 \item{tol}{Tolerance for convergence (default: 1e-5).}
+
+\item{shuffle}{Whether order of coefficients is shuffled during coordinate
+descent (default: TRUE).}
+
+\item{seed}{An integer that is used as argument by \code{set.seed()} for
+offsetting the random number generator. Default is to not set a
+particular randomization seed.}
 }
 \value{
 An object of class "risk_mod" with the following attributes:

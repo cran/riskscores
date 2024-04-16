@@ -4,6 +4,10 @@
 # riskscores
 
 <!-- badges: start -->
+
+[![CRAN
+status](https://www.r-pkg.org/badges/version/riskscores)](https://CRAN.R-project.org/package=riskscores)
+
 <!-- badges: end -->
 
 Risk scores are sparse linear models that map an integer linear
@@ -40,8 +44,8 @@ More details can be found in the package’s vignette.
 library(riskscores)
 
 # Prepare data
-y <- breastcancer[[1]]
-X <- as.matrix(breastcancer[,2:ncol(breastcancer)])
+y <- breastcancer[,1]
+X <- as.matrix(breastcancer[,-1])
 
 # Fit risk score model 
 mod <- risk_mod(X, y, lambda0 = 0.058)
