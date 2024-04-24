@@ -906,7 +906,7 @@ coefficients can be accessed by calling <code>coef()</code> on the
 <code>risk_mod</code> object. This vector is also saved as
 <code>$beta</code> within the <code>risk_mod</code> object.</p>
 <div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="fu">coef</span>(mod) <span class="co"># equivalently: mod$beta</span></span>
-<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a><span class="co">#&gt;              (Intercept)           ClumpThickness     UniformityOfCellSize </span></span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a><span class="co">#&gt;                Intercept           ClumpThickness     UniformityOfCellSize </span></span>
 <span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a><span class="co">#&gt;                -109.1192                  10.0000                   0.0000 </span></span>
 <span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a><span class="co">#&gt;    UniformityOfCellShape         MarginalAdhesion SingleEpithelialCellSize </span></span>
 <span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a><span class="co">#&gt;                   8.0000                   0.0000                   0.0000 </span></span>
@@ -918,7 +918,7 @@ coefficients can be accessed by calling <code>coef()</code> on the
 regression model by multiplying the integer and coefficients by <span class="math inline">\(\gamma\)</span> (saved as <code>$gamma</code> in
 the <code>risk_mod</code> object).</p>
 <div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a><span class="fu">coef</span>(mod) <span class="sc">*</span> mod<span class="sc">$</span>gamma</span>
-<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a><span class="co">#&gt;              (Intercept)           ClumpThickness     UniformityOfCellSize </span></span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a><span class="co">#&gt;                Intercept           ClumpThickness     UniformityOfCellSize </span></span>
 <span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a><span class="co">#&gt;               -8.5584971                0.7843255                0.0000000 </span></span>
 <span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a><span class="co">#&gt;    UniformityOfCellShape         MarginalAdhesion SingleEpithelialCellSize </span></span>
 <span id="cb15-5"><a href="#cb15-5" tabindex="-1"></a><span class="co">#&gt;                0.6274604                0.0000000                0.0000000 </span></span>
@@ -929,7 +929,7 @@ the <code>risk_mod</code> object).</p>
 <p>The <code>risk_mod</code> object stores a <code>glm</code> object of
 this non-integer logistic regression model as <code>$glm_mod</code>.</p>
 <div class="sourceCode" id="cb16"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" tabindex="-1"></a><span class="fu">coef</span>(mod<span class="sc">$</span>glm_mod)</span>
-<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a><span class="co">#&gt;                       V1           ClumpThickness     UniformityOfCellSize </span></span>
+<span id="cb16-2"><a href="#cb16-2" tabindex="-1"></a><span class="co">#&gt;                Intercept           ClumpThickness     UniformityOfCellSize </span></span>
 <span id="cb16-3"><a href="#cb16-3" tabindex="-1"></a><span class="co">#&gt;               -8.5584971                0.7843255                0.0000000 </span></span>
 <span id="cb16-4"><a href="#cb16-4" tabindex="-1"></a><span class="co">#&gt;    UniformityOfCellShape         MarginalAdhesion SingleEpithelialCellSize </span></span>
 <span id="cb16-5"><a href="#cb16-5" tabindex="-1"></a><span class="co">#&gt;                0.6274604                0.0000000                0.0000000 </span></span>
