@@ -123,6 +123,43 @@ update_gamma_intercept <- function(X, y, beta, weights) {
   return (list(gamma=gamma, beta=beta))
 }
 
+#' Initial Temperature for Simulated Annealing
+#'
+#' Finds initial temperature so that will accept 90% of current obj with 95% probability
+#' @inheritParams annealscore
+#' @return Numeric initial temperature value
+#' @noRd
+getInitTemp <- function(X, y, gamma, beta, weights, lambda0) {
+  obj <- obj_fcn(X, y, gamma, beta, weights, lambda0)
+  max_obj = 1.1*obj
+  T <- (obj - max_obj) / log(0.95)
+  return(T)
+}
+
+#' Alpha for Simulated Annealing
+#'
+#' Calculates alpha value so that will accept initial obj with 15% probability
+#' @param p Number of covariates
+#' @return Numeric alpha value
+#' @noRd
+getAlpha <- function(p) {
+  # Calculate alpha using the corrected formula
+  alpha <- (log(0.95) / log(0.15))^(1 / p)
+  return(max(alpha, 0.95))
+}
+
+#' Acceptance probability for neighbor given current solution
+#' @param e1 current objective
+#' @param e2 candidate objective
+#' @return Numeric probability
+#' @noRd
+getAcceptanceProb <- function(e1, e2, T) {
+  if (e2 < e1) {
+    return(1)
+  }
+  return(exp(-(e2 - e1) / T))
+}
+
 #' Run Coordinate Descent
 #'
 #' Find the optimal risk score model through a coordinate descent algorithm.
@@ -174,20 +211,119 @@ risk_coord_desc <- function(X, y, gamma, beta, weights, lambda0 = 0,
   }
 
   # Check if max iterations
-  if(iters >= max_iters) warning("Algorithm reached maximum number of
+  if(iters >= max_iters && iters > 2) warning("Algorithm reached maximum number of
                                  iterations")
   return(list(gamma=gamma, beta=beta))
 }
 
+#' Run AnnealScore
+#'
+#' Find the optimal risk score model through a simulated annealing algorithm.
+#' At each iteration, the algorithm updates the model intercept and scalar value
+#' (gamma) based on a randomly generated neighbor. Algorithm runs until it
+#' converges or reaches the maximum number of iterations.
+#' @inheritParams risk_mod
+#' @param gamma Scalar to rescale coefficients for prediction.
+#' @param beta Numeric vector with \eqn{p} coefficients.
+#' @return A list containing the optimal gamma (numeric) and
+#'  beta (numeric vector).
+#' @noRd
+annealscore <- function(X, y, gamma, beta, weights, lambda0 = 0,
+                        a = -10, b = 10, max_iters = 1000, tol=1e-5) {
+  # Getting initial objective function and temperature
+  obj <- obj_fcn(X, y, gamma, beta, weights, lambda0)
+  T <- getInitTemp(X, y, gamma, beta, weights, lambda0)
+  p <- ncol(X)-1
+  p_try <- max(floor(p/2),1)
+  
+  alpha <- getAlpha(p)
+  best_beta <- beta
+  best_obj <- obj
+  best_gamma <- gamma
+  
+  for (iter in 1:max_iters) {
+    # Cool down
+    T <- alpha * T
+    
+    # Selecting subset of indices
+    indices <- sample(1:p, p_try)
+    
+    X_sub <- X[,c(indices+1)]
+    score = as.vector(X %*% beta)
+    X_sub <- cbind(X_sub, score = score)
+    
+    # Building an LR model for residuals
+    mod_scores <- stats::glm(y ~ score, data = data.frame(X, y = y, score = score))
+    resid <- y - stats::predict(mod_scores, type = "response")
+    mod_lm <- stats::lm(resid ~ ., data = as.data.frame(X_sub), weights = weights)
+    coef_lm <- stats::coef(mod_lm)
+    
+    # Replace NA's with 0's
+    coef_lm[is.na(coef_lm)] <- 0
+    
+    selected_coefs <- coef_lm[-c(1, length(coef_lm))]
+    
+    # If all coefficients are zero, then skip this iteration
+    if (max(abs(selected_coefs)) == 0) {
+      next
+    }
+    
+    scaled_coefs <- abs(selected_coefs) / max(abs(selected_coefs))
+    try_beta <- beta 
+    
+    # Randomly round
+    for (i in 1:p_try) {
+      var_index <- indices[i]
+      
+      # beta[i] +1 or -1 if p-value is significant
+      if (stats::runif(1) < scaled_coefs[i]) {
+        try_beta[var_index + 1] <- try_beta[var_index + 1] + sign(selected_coefs[i])
+      }
+    }
+    try_beta <- pmax(try_beta, a)
+    try_beta <- pmin(try_beta, b)
+    
+    upd <- update_gamma_intercept(X, y, try_beta, weights)
+    try_beta <- upd$beta
+    try_gamma <- upd$gamma
+    
+    try_obj <- obj_fcn(X, y, try_gamma, try_beta, weights, lambda0)
+    
+    # Accept the new solution based on probability
+    acc_prob <- getAcceptanceProb(best_obj, try_obj, T)
+    
+    if (stats::runif(1) < acc_prob ) {
+      obj <- try_obj
+      beta <- try_beta
+      gamma <- try_gamma
+    } 
+    
+    # Update best seen objective function value
+    if (obj < best_obj) {
+      best_obj <- obj
+      best_beta <- beta
+      best_gamma <- gamma
+    }
+    
+    if (T < tol) {
+      break
+    }
+  }
+  
+  # Run one iteration of coordinate descent
+  result <- risk_coord_desc(X, y, best_gamma, best_beta, weights, lambda0 = lambda0, a = a, b = b, max_iters = 2)
+  return (list(gamma=result$gamma, beta=result$beta))
+}
+
 #' Fit an Integer Risk Score Model
 #'
-#' Fits an optimized integer risk score model using a cyclical coordinate descent
-#'  algorithm. Returns an object of class "risk_mod".
+#' Fits an optimized integer risk score model using a heuristic
+#' algorithm. Returns an object of class "risk_mod".
 #'
 #' @details
 #'
-#' This function uses a cyclical coordinate descent algorithm to solve the
-#' following optimization problem.
+#' This function uses either a cyclical coordinate descent algorithm or
+#' simulated annealing algorithm to solve the following optimization problem.
 #'
 #'  \deqn{\min_{\alpha,\beta} \quad \frac{1}{n} \sum_{i=1}^{n} (\gamma y_i x_i^T \beta - log(1 + exp(\gamma x_i^T \beta))) + \lambda_0 \sum_{j=1}^{p} 1(\beta_{j} \neq 0)}
 #'
@@ -208,17 +344,22 @@ risk_coord_desc <- function(X, y, gamma, beta, weights, lambda0 = 0,
 #' @param weights Numeric vector of length \eqn{n} with weights for each
 #'  observation. Unless otherwise specified, default will give equal weight to
 #'  each observation.
+#' @param n_train_runs A positive integer representing the number of times to
+#'  initialize and train the model, returning the run with the lowest objective
+#'  function for the training data.
 #' @param lambda0 Penalty coefficient for L0 term (default: 0).
 #'  See [cv_risk_mod()] for `lambda0` tuning.
 #' @param a Integer lower bound for coefficients (default: -10).
 #' @param b Integer upper bound for coefficients (default: 10).
-#' @param max_iters Maximum number of iterations (default: 100).
+#' @param max_iters Maximum number of iterations (default: 10000).
 #' @param tol Tolerance for convergence (default: 1e-5).
 #' @param shuffle Whether order of coefficients is shuffled during coordinate
-#' descent (default: TRUE).
+#'    descent (default: TRUE).
 #' @param seed An integer that is used as argument by `set.seed()` for
 #'    offsetting the random number generator. Default is to not set a
 #'    particular randomization seed.
+#' @param method A string that specifies which method ("riskcd" or "annealscore") 
+#'    to run (default: "annealscore")
 #' @return An object of class "risk_mod" with the following attributes:
 #'  \item{gamma}{Final scalar value.}
 #'  \item{beta}{Vector of integer coefficients.}
@@ -238,16 +379,22 @@ risk_coord_desc <- function(X, y, gamma, beta, weights, lambda0 = 0,
 #' mod1 <- risk_mod(X, y)
 #' mod1$model_card
 #'
-#' mod2 <- risk_mod(X, y, lambda0 = 0.01)
+#' mod2 <- risk_mod(X, y, lambda0 = 0.01,)
 #' mod2$model_card
 #'
-#' mod3 <- risk_mod(X, y, lambda0 = 0.01, a = -5, b = 5)
+#' mod3 <- risk_mod(X, y, lambda0 = 0.01, a = -5, b = 5, method = "riskcd")
 #' mod3$model_card
 #' @export
 risk_mod <- function(X, y, gamma = NULL, beta = NULL, weights = NULL,
-                     lambda0 = 0, a = -10, b = 10, max_iters = 100, tol= 1e-5,
-                     shuffle = TRUE, seed = NULL) {
+                     n_train_runs = 1, lambda0 = 0, a = -10, b = 10,
+                     max_iters = 10000,  tol = 1e-5, shuffle = TRUE, seed = NULL,
+                     method = "annealscore") {
 
+  # Check valid method
+  if (is.null(method) || !(method %in% c("annealscore", "riskcd"))) {
+    stop("method is not valid")
+  }
+  
   # Set seed
   if (!is.null(seed)) {
     set.seed(seed)
@@ -255,6 +402,10 @@ risk_mod <- function(X, y, gamma = NULL, beta = NULL, weights = NULL,
 
   # Check that X is a matrix
   if (!is.matrix(X)) stop ("X must be a matrix")
+
+  if (n_train_runs != round(n_train_runs) | n_train_runs < 0) {
+    stop("n_train_runs must be a positive integer")
+  }
 
   # Add intercept column
   if (!all(X[,1] == rep(1, nrow(X)))) {
@@ -276,74 +427,111 @@ risk_mod <- function(X, y, gamma = NULL, beta = NULL, weights = NULL,
   if (is.null(weights)) {
     weights <- rep(1, nrow(X))}
 
-  # If initial gamma is null but have betas then use update function
-  if (is.null(gamma) & (!is.null(beta))){
-    upd <- update_gamma_intercept(X, y, beta, weights)
-    gamma <- upd$gamma
-    beta <- upd$beta
+  # Function to run coordinate descent with initialization
+  run_risk_mod <- function(X, y, gamma, beta, weights, lambda0, a, b,
+                           max_iters, tol, shuffle) {
+    # If initial gamma is null but have betas then use update function
+    if (is.null(gamma) & (!is.null(beta))){
+      upd <- update_gamma_intercept(X, y, beta, weights)
+      gamma <- upd$gamma
+      beta <- upd$beta
+    }
+
+    # Initial beta is null then round LR coefficients using median and randomized rounding
+    if (is.null(beta)){
+      # Initial model
+      df <- data.frame(X, y)
+      init_mod <- stats::glm(y~.-1, family = "binomial", weights = weights, data = df)
+
+      # Replace NA's with 0's
+      coef_vals <- unname(stats::coef(init_mod))
+      coef_vals[is.na(coef_vals)] <- 0
+
+      # Round so betas within range
+      gamma <- max(abs(coef_vals[-1]))/min(abs(a + 0.5), abs(b + 0.5))
+      beta <- coef_vals/gamma
+      beta <- randomized_rounding(beta)
+    }
+
+    # Check no numeric issues
+    if (is.nan(gamma) | sum(is.nan(beta)) > 0){
+      stop("Initial gamma or beta is NaN - check starting value for beta")
+    }
+    if (is.na(gamma) | sum(is.na(beta)) > 0){
+      stop("Initial gamma or beta is NA - check starting value for beta")
+    }
+    if (length(beta) != ncol(X)) stop("beta and X non-compatible")
+    if (length(y) != nrow(X)) stop("y and X non-compatible")
+    
+    # Run appropriate method to estimate betas
+    if (method == "annealscore") {
+      res <- annealscore(X, y, gamma, beta, weights, lambda0, a, b, max_iters, tol)
+    }
+    if (method == "riskcd") {
+      res <- risk_coord_desc(X, y, gamma, beta, weights, lambda0, a, b, max_iters,
+                             tol, shuffle)
+    }
+
+    gamma <- res$gamma
+    beta <- res$beta
+
+    return(list(gamma=gamma, beta=beta))
   }
 
-  # Initial beta is null then round LR coefficients using median
-  if (is.null(beta)){
-    # Initial model
-    df <- data.frame(X, y)
-    init_mod <- stats::glm(y~.-1, family = "binomial", weights = weights, data = df)
+  # Track minimum objective function and best model parameters
+  min_obj_fn <- Inf
+  best_gamma <- NULL
+  best_beta <- NULL
 
-    # Replace NA's with 0's
-    coef_vals <- unname(stats::coef(init_mod))
-    coef_vals[is.na(coef_vals)] <- 0
+  # Run n_train_runs to find the best model
+  for (i in 1:n_train_runs) {
+    curr_mod <- run_risk_mod(X, y, gamma, beta, weights, lambda0, a, b,
+                             max_iters, tol, shuffle)
+    curr_obj_fn <- obj_fcn(X, y, curr_mod$gamma, curr_mod$beta, weights, lambda0)
 
-    # Round so betas within range
-    gamma <- max(abs(coef_vals[-1]))/min(abs(a + 0.5), abs(b + 0.5))
-    beta <- coef_vals/gamma
-    beta[-1] <- round(beta[-1])
+    if (curr_obj_fn < min_obj_fn) {
+      min_obj_fn <- curr_obj_fn
+      best_gamma <- curr_mod$gamma
+      best_beta <- curr_mod$beta
+    }
   }
-
-
-  # Check no numeric issues
-  if (is.nan(gamma) | sum(is.nan(beta)) > 0){
-    stop("Initial gamma or beta is NaN - check starting value for beta")
-  }
-  if (is.na(gamma) | sum(is.na(beta)) > 0){
-    stop("Initial gamma or beta is NA - check starting value for beta")
-  }
-  if (length(beta) != ncol(X)) stop("beta and X non-compatible")
-  if (length(y) != nrow(X)) stop("y and X non-compatible")
-
-  # Run coordinate descent from initial solution
-  res <- risk_coord_desc(X, y, gamma, beta, weights, lambda0, a, b, max_iters,
-                         tol, shuffle)
-  gamma <- res$gamma
-  beta <- res$beta
 
   # Convert to GLM object
   glm_mod <- stats::glm(y~.-1, family = "binomial", weights = weights,
-                 start = gamma*beta, method=glm_fit_risk, data = data.frame(X, y))
-  names(beta) <- names(stats::coef(glm_mod))
+                        start = best_gamma*best_beta, method=glm_fit_risk,
+                        data = data.frame(X, y))
+  names(best_beta) <- names(stats::coef(glm_mod))
 
-  # Save model score card
-  nonzero_beta <- beta[beta != 0][-1]
-  if (length(nonzero_beta) <= 1) {
+  # Generate score card and score map for the best model
+  nonzero_beta <- best_beta[best_beta != 0][-1] # Exclude intercept
+  if (length(nonzero_beta) == 0) {
     model_card <- NULL
     score_map <- NULL
   } else {
     model_card <- data.frame(Points = nonzero_beta)
 
     # Get range of possible scores
-    X_nonzero <- X[,which(beta != 0)]
-    X_nonzero <- X_nonzero[,-1]
-    min_pts <- rep(NA, length(nonzero_beta))
-    max_pts <- rep(NA, length(nonzero_beta))
-    for (i in 1:ncol(X_nonzero)) {
-      temp <- nonzero_beta[i] * c(min(X_nonzero[,i]), max(X_nonzero[,i]))
-      min_pts[i] <- min(temp)
-      max_pts[i] <- max(temp)
+    X_nonzero <- X[,which(best_beta != 0)][,-1]
+    
+    if (length(nonzero_beta) == 1){
+      min_pts <- min(X_nonzero)
+      max_pts <- max(X_nonzero)
+    }
+    else{
+      min_pts <- rep(NA, length(nonzero_beta))
+      max_pts <- rep(NA, length(nonzero_beta))
+      
+      for (i in 1:ncol(X_nonzero)) {
+        temp <- nonzero_beta[i] * c(min(X_nonzero[,i]), max(X_nonzero[,i]))
+        min_pts[i] <- min(temp)
+        max_pts[i] <- max(temp)
+      }
     }
 
     score_range <- seq(sum(min_pts), sum(max_pts))
 
     # Map scores to risk
-    v <- gamma*(beta[1] + score_range)
+    v <- best_gamma*(best_beta[1] + score_range)
     p <- exp(v)/(1+exp(v))
 
     # Save score map
@@ -351,9 +539,10 @@ risk_mod <- function(X, y, gamma = NULL, beta = NULL, weights = NULL,
                             Risk = round(p,4))
   }
 
-  # Return risk_mod object
-  mod <- list(gamma=gamma, beta=beta, glm_mod=glm_mod, X=X, y=y, weights=weights,
-              lambda0 = lambda0, model_card = model_card, score_map = score_map)
-  class(mod) <- "risk_mod"
-  return(mod)
+  # Return the best model with score card and score map
+  best_mod <- list(gamma=best_gamma, beta=best_beta, glm_mod=glm_mod, X=X, y=y,
+                   weights=weights, lambda0 = lambda0, model_card = model_card,
+                   score_map = score_map)
+  class(best_mod) <- "risk_mod"
+  return(best_mod)
 }

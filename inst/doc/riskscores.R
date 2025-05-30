@@ -9,8 +9,9 @@ library(kableExtra)
 library(dplyr)
 library(ggplot2)
 library(magrittr)
+library(pROC)
 
-set.seed(1)
+set.seed(5)
 
 
 ## ----setup--------------------------------------------------------------------
@@ -26,7 +27,7 @@ X <- as.matrix(breastcancer[,-1])
 
 
 ## -----------------------------------------------------------------------------
-foldids <- stratify_folds(y, nfolds = 5, seed = 1)
+foldids <- stratify_folds(y, nfolds = 5, seed = 5)
 
 
 ## -----------------------------------------------------------------------------
@@ -54,13 +55,13 @@ mod$model_card %>%
 
 ## ---- echo = FALSE------------------------------------------------------------
 mod$score_map %>%
-  filter(Score %in% seq(25, 200, 25)) %>%
+  filter(Score %in% seq(30, 300, 30)) %>%
   kable(caption = "`mod$score_map`")
 
 ## -----------------------------------------------------------------------------
-get_risk(mod, score = 125)
+get_risk(mod, score = 150)
 
-get_score(mod, risk = 0.7765)
+get_score(mod, risk = 0.8270133)
 
 ## -----------------------------------------------------------------------------
 get_metrics(mod, threshold = seq(0.1, 0.9, 0.1))
@@ -91,18 +92,19 @@ response <- predict(mod, type = "response")[1:5] %>%
 score <- predict(mod, type = "score")[1:5]
 
 data.frame(X[1:5,which(dimnames(X)[[2]] %in% c("ClumpThickness",
-                                             "UniformityOfCellShape",
-                                             "BareNuclei"))],
+                                               "UniformityOfCellShape",
+                                               "BareNuclei",
+                                               "BlandChromatin"))],
                        score, link, response) %>%
   kable("html",
         booktabs = T,
-        col.names = c("CT","UCS", "BN", 
+        col.names = c("CT", "UCS", "BN", "BC", 
                      "'score'", "'link'", "'response'"),
         caption = "Comparison of `predict()` outputs") %>%
   kable_styling("striped", full_width = F) %>%
-  add_header_above(c("Covariates" = 3, "Prediction" = 3))
+  add_header_above(c("Covariates" = 4, "Prediction" = 3))
 
 
 ## -----------------------------------------------------------------------------
-plot(mod, score_min = 25, score_max = 200)
+plot(mod, score_min = 30, score_max = 300)
 
