@@ -1,6 +1,6 @@
 Package: riskscores
 Title: Optimized Integer Risk Score Models
-Version: 1.2.1
+Version: 1.2.3
 Authors@R: c(
     person("Hannah", "Eglinton", , "eglintonh@gmail.com", role = c("aut", "cre")),
     person("Seehanah", "Tang", , "seehanah_tang@brown.edu", role = c("aut", "aut")),
@@ -28,7 +28,7 @@ VignetteBuilder: knitr, kableExtra
 Depends: R (>= 2.10)
 LazyData: true
 NeedsCompilation: no
-Packaged: 2025-05-30 20:31:34 UTC; hannaheglinton
+Packaged: 2025-07-28 17:01:31 UTC; hannaheglinton
 Author: Hannah Eglinton [aut, cre],
   Seehanah Tang [aut, aut],
   Alice Paul [aut, cph],
@@ -44,4 +44,4 @@ Author: Hannah Eglinton [aut, cre],
     cv_risk_mod.R))
 Maintainer: Hannah Eglinton <eglintonh@gmail.com>
 Repository: CRAN
-Date/Publication: 2025-05-30 21:00:02 UTC
+Date/Publication: 2025-07-28 17:20:02 UTC

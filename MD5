@@ -1,10 +1,10 @@
-4870c93bf31ebcd58b040ca7c7fbaf23 *DESCRIPTION
+462515fc6e0ef2b09f69bdb7c1ceb0d6 *DESCRIPTION
 6aa97134d6d1cde5a699b7d9263f5280 *NAMESPACE
 05c398daea8cad562b9d93fbd7d682f0 *R/cv_risk_mod.R
 c211f310638764dd2735a2d19a7da57f *R/data.R
-1828083388c9efdb0625a7d7b82b5b6c *R/generic.R
+41e00a007d31b66996801848fbf15610 *R/generic.R
 f23c451f0c3bd357d47e5c69b6283f7b *R/helpers.R
-3773bda6a27872a4d3366462331e8b42 *R/risk_mod.R
+d89f49deef1d35537a7c828bf1e8fb40 *R/risk_mod.R
 b56ff2b193ecba52f9ec7f3b10cca008 *R/utils-pipe.R
 58874e8a84b94d1847ccd86295ce73ac *R/utils.R
 689c89a16d538631f6288b7ed22ae7b4 *README.md
@@ -12,7 +12,7 @@ b9a05eaaff63e4dfc598f853207c8167 *build/vignette.rds
 d74cfb932d1ada4d3d7c8a01adbc3e3e *data/breastcancer.rda
 b7bdd588b03153cc0ef47a175733988d *inst/doc/riskscores.R
 af83263b2cada7fa08e961083da46cd2 *inst/doc/riskscores.Rmd
-4690b19503176af697d59213e8121a25 *inst/doc/riskscores.html
+915c67305ba93fd38936e7795f9e5970 *inst/doc/riskscores.html
 3eac05b087cc517cbc953a6b21b52b0f *man/breastcancer.Rd
 42fcf8aa5ab7edba96aec99e7610975f *man/clip_exp_vals.Rd
 ba020b96b103618630b95c4c96c7bb49 *man/coef.risk_mod.Rd
