@@ -18,7 +18,8 @@ risk_mod(
   tol = 1e-05,
   shuffle = TRUE,
   seed = NULL,
-  method = "annealscore"
+  method = "annealscore",
+  p_subset_frac = 0.5
 )
 }
 \arguments{
@@ -61,6 +62,11 @@ particular randomization seed.}
 
 \item{method}{A string that specifies which method ("riskcd" or "annealscore")
 to run (default: "annealscore")}
+
+\item{p_subset_frac}{Fraction of covariates (rounded down, minimum 1) considered
+as candidate neighbors at each iteration of the \code{"annealscore"} method's
+residual-guided neighbor generation (default: 0.5). Only used when
+\code{method = "annealscore"}.}
 }
 \value{
 An object of class "risk_mod" with the following attributes:

@@ -155,6 +155,49 @@ stratify_folds <- function(y, nfolds = 10, seed = NULL) {
 
 }
 
+#' Adjust Predicted Probabilities for Population Prevalence
+#'
+#' Recalibrates predicted probabilities from a risk score model fitted on a
+#' study sample to a target population with a different outcome prevalence.
+#' The adjustment shifts the log-odds by the difference between the logit of
+#' the target prevalence and the logit of the study prevalence, leaving the
+#' discrimination (AUC, AUPRC) unchanged while improving calibration.
+#' @param predicted_probs Numeric vector of predicted probabilities from the
+#'   risk score model (values in (0, 1)).
+#' @param study_prevalence Numeric scalar. Outcome prevalence in the sample
+#'   used to fit the model (i.e. \code{mean(y)} on the training data).
+#' @param target_prevalence Numeric scalar. Expected outcome prevalence in the
+#'   target population to which predictions will be applied.
+#' @return Numeric vector of prevalence-adjusted predicted probabilities with
+#'   the same length as \code{predicted_probs}.
+#' @examples
+#' y <- breastcancer[[1]]
+#' X <- as.matrix(breastcancer[,2:ncol(breastcancer)])
+#' mod <- risk_mod(X, y, lambda0 = 0.01)
+#' preds <- predict(mod, type = "response")[,1]
+#' adj <- prevalence_adjust(preds, study_prevalence = mean(y),
+#'                          target_prevalence = 0.10)
+#' @export
+prevalence_adjust <- function(predicted_probs, study_prevalence,
+                              target_prevalence) {
+
+  if (any(predicted_probs <= 0) | any(predicted_probs >= 1))
+    stop("'predicted_probs' must contain values strictly between 0 and 1")
+  if (study_prevalence <= 0 | study_prevalence >= 1)
+    stop("'study_prevalence' must be strictly between 0 and 1")
+  if (target_prevalence <= 0 | target_prevalence >= 1)
+    stop("'target_prevalence' must be strictly between 0 and 1")
+
+  offset <- log(target_prevalence / (1 - target_prevalence)) -
+            log(study_prevalence  / (1 - study_prevalence))
+
+  log_odds_adj <- log(predicted_probs / (1 - predicted_probs)) + offset
+  adjusted <- 1 / (1 + exp(-log_odds_adj))
+
+  return(adjusted)
+
+}
+
 #' Run risk model with random start
 #'
 #' Runs `nstart` iterations of `risk_mod()`, each with a different

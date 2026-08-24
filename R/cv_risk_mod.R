@@ -14,18 +14,22 @@
 #'  will derive the lambda0 sequence based on the data (see `lambda_min_ratio`).
 #' @param nfolds Number of folds, implied if `foldids` provided (default: 10).
 #' @param foldids Optional vector of values between 1 and `nfolds`.
-#' @param parallel If `TRUE`, parallel processing (using \link[foreach:foreach]{foreach}) 
-#'    is implemented during cross-validation to increase efficiency 
-#'    (default: `FALSE`). User must first register parallel backend with 
+#' @param parallel If `TRUE`, parallel processing (using \link[foreach:foreach]{foreach})
+#'    is implemented during cross-validation to increase efficiency
+#'    (default: `FALSE`). User must first register parallel backend with
 #'    a function such as \link[doParallel:registerDoParallel]{registerDoParallel}.
+#' @param optimize_metric Metric used to select the optimal `lambda0`. Either
+#'    `"auc"` (default) to optimize the area under the ROC curve or `"auprc"` to
+#'    optimize the area under the precision-recall curve.
 #' @return An object of class "cv_risk_mod" with the following attributes:
-#'  \item{results}{Dataframe containing a summary of deviance, accuracy, and auc for
-#'    each value of `lambda0` (mean and SD). Also includes the number of nonzero
-#'    coefficients that are produced by each `lambda0` when fit on the full data.}
+#'  \item{results}{Dataframe containing a summary of deviance, accuracy, auc, and
+#'    auprc for each value of `lambda0` (mean and SD). Also includes the number of
+#'    nonzero coefficients that are produced by each `lambda0` when fit on the full data.}
 #'  \item{lambda_min}{Numeric value indicating the `lambda0` that resulted in the
-#'    highest mean auc}
+#'    highest mean value of `optimize_metric`}
 #'  \item{lambda_1se}{Numeric value indicating the largest `lamdba0` that
-#'    had a mean auc within one standard error of `lambda_min`.}
+#'    had a mean value of `optimize_metric` within one standard error of `lambda_min`.}
+#'  \item{optimize_metric}{The metric used to select `lambda_min` and `lambda_1se`.}
 #' @importFrom foreach %dopar%
 #' @export
 cv_risk_mod <- function(X, y, weights = NULL, beta = NULL, a = -10, b = 10,
@@ -33,7 +37,10 @@ cv_risk_mod <- function(X, y, weights = NULL, beta = NULL, a = -10, b = 10,
                         lambda_min_ratio = ifelse(nrow(X) < ncol(X), 0.01, 1e-04),
                         lambda0 = NULL, nfolds = 10, foldids = NULL, parallel = FALSE,
                         shuffle = TRUE, seed = NULL,
-                        method = "annealscore") {
+                        method = "annealscore",
+                        optimize_metric = c("auc", "auprc")) {
+
+  optimize_metric <- match.arg(optimize_metric)
 
   # Check valid method
   if (is.null(method) || !(method %in% c("annealscore", "riskcd"))) {
@@ -91,6 +98,7 @@ cv_risk_mod <- function(X, y, weights = NULL, beta = NULL, a = -10, b = 10,
                        dev = rep(0, nfolds*num_lambda0),
                        acc = rep(0, nfolds*num_lambda0),
                        auc = rep(0, nfolds*num_lambda0),
+                       auprc = rep(0, nfolds*num_lambda0),
                        non_zeros = rep(0, nfolds*num_lambda0))
 
 
@@ -106,7 +114,7 @@ cv_risk_mod <- function(X, y, weights = NULL, beta = NULL, a = -10, b = 10,
                     max_iters = max_iters, tol= 1e-5, shuffle = shuffle, method = method)
     res <- get_metrics_internal(mod, X[foldids == foldid,], y[foldids == foldid])
     non_zeros <- sum(mod$beta != 0)
-    return(c(res$dev, res$acc, res$auc, non_zeros))
+    return(c(res$dev, res$acc, res$auc, res$auprc, non_zeros))
   }
 
   # Run through all folds
@@ -118,22 +126,23 @@ cv_risk_mod <- function(X, y, weights = NULL, beta = NULL, a = -10, b = 10,
       {
         fold_fcn(res_df[i,1],res_df[i,2])
       }
-    res_df[,3:6] <- base::t(sapply(1:nrow(res_df), function(i) res_df[i,3:6] <- outlist[[i]]))
+    res_df[,3:7] <- base::t(sapply(1:nrow(res_df), function(i) res_df[i,3:7] <- outlist[[i]]))
   } else {
 
-    res_df[,3:6] <- base::t(sapply(1:nrow(res_df),
-                             function(i) fold_fcn(res_df$lambda0[i],
-                                                  res_df$fold[i])))
+    res_df[,3:7] <- base::t(sapply(1:nrow(res_df),
+                                   function(i) fold_fcn(res_df$lambda0[i],
+                                                        res_df$fold[i])))
   }
 
 
   # Summarize
-  dev = acc = auc = NULL # set global variables
+  dev = acc = auc = auprc = NULL # set global variables
   res_df_summary <- res_df %>%
     dplyr::group_by(lambda0) %>%
     dplyr::summarize(mean_dev = mean(dev), sd_dev = stats::sd(dev),
-              mean_acc = mean(acc), sd_acc = stats::sd(acc),
-              mean_auc = mean(auc), sd_auc = stats::sd(auc))
+                     mean_acc = mean(acc), sd_acc = stats::sd(acc),
+                     mean_auc = mean(auc), sd_auc = stats::sd(auc),
+                     mean_auprc = mean(auprc), sd_auprc = stats::sd(auprc))
 
   # Find number of nonzero coefficients when fit on full data
   full_fcn <- function(l0) {
@@ -145,17 +154,19 @@ cv_risk_mod <- function(X, y, weights = NULL, beta = NULL, a = -10, b = 10,
   }
 
   res_df_summary$nonzero <- sapply(1:nrow(res_df_summary),
-                           function(i) full_fcn(res_df_summary$lambda0[i]))
+                                   function(i) full_fcn(res_df_summary$lambda0[i]))
 
-  # Find lambda_min and lambda1_se for auc
-  lambda_min_ind <- which.max(res_df_summary$mean_auc)
+  # Find lambda_min and lambda_1se based on optimize_metric
+  mean_col <- paste0("mean_", optimize_metric)
+  sd_col   <- paste0("sd_",   optimize_metric)
+  lambda_min_ind <- which.max(res_df_summary[[mean_col]])
   lambda_min <- res_df_summary$lambda0[lambda_min_ind]
-  min_auc_1se <- res_df_summary$mean_auc[lambda_min_ind] -
-    res_df_summary$sd_auc[lambda_min_ind]
-  lambda_1se <- res_df_summary$lambda0[max(which(res_df_summary$mean_auc >= min_auc_1se))]
+  min_metric_1se <- res_df_summary[[mean_col]][lambda_min_ind] -
+    res_df_summary[[sd_col]][lambda_min_ind]
+  lambda_1se <- res_df_summary$lambda0[max(which(res_df_summary[[mean_col]] >= min_metric_1se))]
 
   cv_obj <- list(results = res_df_summary, lambda_min = lambda_min,
-                 lambda_1se =lambda_1se)
+                 lambda_1se = lambda_1se, optimize_metric = optimize_metric)
   class(cv_obj) <- "cv_risk_mod"
   return(cv_obj)
 }

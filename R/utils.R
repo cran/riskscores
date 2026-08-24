@@ -128,13 +128,13 @@ glm_fit_risk <- function (x, y, weights = rep(1, nobs), start = NULL,
 
 #' Get Model Metrics for a Single Threshold
 #'
-#' Calculates a risk model's deviance, accuracy, sensitivity, and specificity
-#' given a set of data and a threshold value.
+#' Calculates a risk model's deviance, accuracy, sensitivity, specificity,
+#' AUC, and AUPRC given a set of data and a threshold value.
 #' @param mod An object of class `risk_mod`, usually a result of a call to
 #'  [risk_mod()].
 #' @inheritParams get_metrics
 #' @return List with deviance (dev), accuracy (acc), sensitivity (sens),
-#'  specificity (spec), and auc.
+#'  specificity (spec), auc, and auprc.
 get_metrics_internal <- function(mod, X = NULL, y = NULL, weights = NULL,
                                  threshold = 0.50, threshold_type = c("response", "score")){
   
@@ -193,9 +193,13 @@ get_metrics_internal <- function(mod, X = NULL, y = NULL, weights = NULL,
   sens <- tp/(tp+fn)
   spec <- tn/(tn+fp)
   
-  # AUC values
-  roc <-pROC::roc(y, predict.risk_mod(mod, X, type = "response")[,1], quiet = TRUE)
-  return(list(dev = dev, acc=acc, sens=sens, spec=spec, auc=roc$auc))
+  # AUC and AUPRC values
+  pred_prob <- predict.risk_mod(mod, X, type = "response")[,1]
+  roc <- pROC::roc(y, pred_prob, quiet = TRUE)
+  pr <- PRROC::pr.curve(scores.class0 = pred_prob, weights.class0 = y)
+  auprc <- pr$auc.integral
+
+  return(list(dev = dev, acc=acc, sens=sens, spec=spec, auc=roc$auc, auprc=auprc))
 }
 
 #' Randomly round the initialized coefficients before coordinate descent

@@ -21,7 +21,8 @@ cv_risk_mod(
   parallel = FALSE,
   shuffle = TRUE,
   seed = NULL,
-  method = "annealscore"
+  method = "annealscore",
+  optimize_metric = c("auc", "auprc")
 )
 }
 \arguments{
@@ -75,16 +76,21 @@ particular randomization seed.}
 
 \item{method}{A string that specifies which method ("riskcd" or "annealscore")
 to run (default: "annealscore")}
+
+\item{optimize_metric}{Metric used to select the optimal \code{lambda0}. Either
+\code{"auc"} (default) to optimize the area under the ROC curve or \code{"auprc"} to
+optimize the area under the precision-recall curve.}
 }
 \value{
 An object of class "cv_risk_mod" with the following attributes:
-\item{results}{Dataframe containing a summary of deviance, accuracy, and auc for
-each value of \code{lambda0} (mean and SD). Also includes the number of nonzero
-coefficients that are produced by each \code{lambda0} when fit on the full data.}
+\item{results}{Dataframe containing a summary of deviance, accuracy, auc, and
+auprc for each value of \code{lambda0} (mean and SD). Also includes the number of
+nonzero coefficients that are produced by each \code{lambda0} when fit on the full data.}
 \item{lambda_min}{Numeric value indicating the \code{lambda0} that resulted in the
-highest mean auc}
+highest mean value of \code{optimize_metric}}
 \item{lambda_1se}{Numeric value indicating the largest \code{lamdba0} that
-had a mean auc within one standard error of \code{lambda_min}.}
+had a mean value of \code{optimize_metric} within one standard error of \code{lambda_min}.}
+\item{optimize_metric}{The metric used to select \code{lambda_min} and \code{lambda_1se}.}
 }
 \description{
 Runs k-fold cross-validation on a grid of \eqn{\lambda_0} values. Records

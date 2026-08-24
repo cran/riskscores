@@ -4,7 +4,14 @@
 \alias{predict.risk_mod}
 \title{Predict Method for Risk Model Fits}
 \usage{
-\method{predict}{risk_mod}(object, newx = NULL, type = c("link", "response", "score"), ...)
+\method{predict}{risk_mod}(
+  object,
+  newx = NULL,
+  type = c("link", "response", "score"),
+  target_prevalence = NULL,
+  study_prevalence = NULL,
+  ...
+)
 }
 \arguments{
 \item{object}{An object of class "risk_mod", usually a result of a call to
@@ -17,6 +24,18 @@ to be made. If ommited, the fitted values are used.}
 scale of the predictors (i.e. log-odds); the "response" type is on the scale
 of the response variable (i.e. risk probabilities); the "score" type returns
 the risk score calculated from the integer model.}
+
+\item{target_prevalence}{Optional numeric scalar. If provided (and
+\code{type = "response"}), predicted probabilities are recalibrated to this
+target outcome prevalence via \code{\link[=prevalence_adjust]{prevalence_adjust()}} before being returned.
+Useful when applying a model fit on one population (e.g. a case-control or
+enriched study sample) to a target population with a different outcome
+prevalence.}
+
+\item{study_prevalence}{Optional numeric scalar giving the outcome
+prevalence in the sample used to fit \code{object}. Only used when
+\code{target_prevalence} is provided. Defaults to \code{mean(object$y)}, the
+prevalence observed in the model's training data.}
 
 \item{...}{Additional arguments.}
 }
@@ -33,4 +52,5 @@ mod <- risk_mod(X, y, lambda0 = 0.01)
 predict(mod, type = "link")[1]
 predict(mod, type = "response")[1]
 predict(mod, type = "score")[1]
+predict(mod, type = "response", target_prevalence = 0.10)[1]
 }

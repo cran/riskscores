@@ -99,10 +99,11 @@ foldids <- stratify_folds(y, nfolds = 5, seed = 5)
 ```
 
 
-The `cv_risk_mod()` function runs cross validation for a grid of possible $\lambda_0$ values. If the user does not specify the vector of $\lambda_0$ values to test, the program constructs this $\lambda_0$ sequence. The maximum $\lambda_0$ in this sequence is the smallest value such that all coefficients in the logistic regression model are zero. The minimum $\lambda_0$ in the sequence is calculated using the user-defined `lambda_ratio` argument. The $\lambda_0$ grid is created by generating `nlambda` values linear on the log scale from the minimum $\lambda_0$ to the maximum $\lambda_0$. We've set `nlambda` to 25, so the program will construct an appropriate sequence of 25 $\lambda_0$ values to test using cross validation. 
+The `cv_risk_mod()` function runs cross validation for a grid of possible $\lambda_0$ values. If the user does not specify the vector of $\lambda_0$ values to test, the program constructs this $\lambda_0$ sequence. The maximum $\lambda_0$ in this sequence is the smallest value such that all coefficients in the logistic regression model are zero. The minimum $\lambda_0$ in the sequence is calculated using the user-defined `lambda_ratio` argument. The $\lambda_0$ grid is created by generating `nlambda` values linear on the log scale from the minimum $\lambda_0$ to the maximum $\lambda_0$. We've set `nlambda` to 10, so the program will construct an appropriate sequence of 10 $\lambda_0$ values to test using cross validation. 
 
 ```{r}
-cv_results <- cv_risk_mod(X, y, foldids = foldids, nlambda = 25)
+cv_results <- cv_risk_mod(X, y, foldids = foldids, nlambda = 10, 
+                          max_iters = 500)
 ```
 
 
@@ -123,7 +124,7 @@ cv_results$lambda_1se
 ```
 
 
-To view a dataframe with the full cross-validation results (including both deviance and accuracy metrics), run `cv_results$results`.  
+To view a dataframe with the full cross-validation results (including deviance, accuracy, AUC, and AUPRC metrics), run `cv_results$results`.
 
 ```{r}
 tail(cv_results$results)
@@ -132,12 +133,14 @@ tail(cv_results$results)
 
 ## Fitting a Risk Score Model
 
-We'll fit a model on the full data using the function `risk_mod()`. We'll use the "lambda_min" value determined by cross-validation as our $\lambda_0$ parameter.  
+We'll fit a model on the full data using the function `risk_mod()`. We'll use the "lambda_min" value determined by cross-validation as our $\lambda_0$ parameter.
 
 ```{r}
 mod <- risk_mod(X, y, lambda0 = cv_results$lambda_1se)
 
 ```
+
+By default, `risk_mod()` fits with `method = "annealscore"`, which at each iteration proposes a candidate coefficient update by regressing the model's residuals on a random subset of covariates. The size of that subset is controlled by `p_subset_frac` (default `0.5`, i.e. half of the covariates are considered at each step); smaller values speed up each iteration at the cost of a narrower search, while larger values broaden the search at increased computational cost.
 
 The integer risk score model can be viewed by calling `mod$model_card`. An individual's risk score can be calculated by multiplying each covariate response by its respective number of points and then adding all points together. In our example below, a patient with a ClumpThickness value of 5, a UniformityOfCellShape value of 1, a BareNuclei value of 1, and a BlandChromatin value of 3 would receive a score of $9(5) + 6(1) + 7(1) + 8(3) = 82$.
 
@@ -248,19 +251,29 @@ data.frame(X[1:5,which(dimnames(X)[[2]] %in% c("ClumpThickness",
 
 ```
 
-The 'score' is a linear combination of the covariates and their integer coefficients: 
+The 'score' is a linear combination of the covariates and their integer coefficients 
 
-- $\text{score} = 9(\text{CT}) + 6(\text{UCS}) + 7 (\text{BN}) + 8(\text{BC})$
+- $ \text{score} = \sum_{j=1}^p \beta_j x_{i,j}.$
 
 
 The 'link' is a linear combination of the covariates using the full logistic regression equation:
 
-- $\text{link} = -9.15 + 0.643(\text{CT}) + 0.429(\text{UCS}) + 0.500(\text{BN}) + 0.572(\text{BC})$
+- $\text{link} = \gamma \cdot (\beta_0 + \text{score})$
 
-The 'response' converts these link values to probabilities: 
+The 'response' converts these link values to probabilities:
 
-- $\text{response} = e^{\text{link}}/(1+e^{\text{link}})$ 
+- $\text{response} = e^{\text{link}}/(1+e^{\text{link}})$
 
+#### Prevalence adjustment
+
+Predicted probabilities from `predict(mod, type = "response")` reflect the outcome prevalence in the training data. If the model will be applied to a population with a different, known outcome prevalence (e.g. a case-control sample fit to a general-population prevalence), pass a `target_prevalence` to rescale the predictions accordingly. This adjustment shifts predicted probabilities on the log-odds scale and leaves discrimination (AUC, AUPRC) unchanged while improving calibration.
+
+```{r}
+# rescale predictions as if the target population had 10% prevalence
+predict(mod, type = "response", target_prevalence = 0.10)[1:5]
+```
+
+By default, the sample's own outcome prevalence (`mean(y)`) is used as the reference; a different reference can be supplied via `study_prevalence`. The same logic underlies `prevalence_adjust()`, which can be applied directly to a vector of predicted probabilities.
 
 ### plot
 

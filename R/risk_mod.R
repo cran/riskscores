@@ -137,6 +137,18 @@ get_init_temp <- function(X, y, gamma, beta, weights, lambda0) {
 }
 
 
+#' Alpha for Simulated Annealing
+#'
+#' Calculates alpha value so that will accept initial obj with 15% probability
+#' @param p Number of covariates
+#' @return Numeric alpha value
+#' @noRd
+get_alpha <- function(p) {
+  # Calculate alpha using the corrected formula
+  alpha <- (log(0.95) / log(0.15))^(1 / p)
+  return(max(alpha, 0.95))
+}
+
 #' Acceptance probability for neighbor given current solution
 #' @param e1 current objective
 #' @param e2 candidate objective
@@ -218,14 +230,15 @@ risk_coord_desc <- function(X, y, gamma, beta, weights, lambda0 = 0,
 #'  beta (numeric vector).
 #' @noRd
 annealscore <- function(X, y, gamma, beta, weights, lambda0 = 0,
-                        a = -10, b = 10, max_iters = 1000, tol=1e-5) {
+                        a = -10, b = 10, max_iters = 1000, tol=1e-5,
+                        p_subset_frac = 0.5) {
   # Getting initial objective function and temperature
   obj <- obj_fcn(X, y, gamma, beta, weights, lambda0)
   T <- get_init_temp(X, y, gamma, beta, weights, lambda0)
   p <- ncol(X)-1
-  p_try <- max(floor(p/2),1)
-  
-  alpha <- 0.95
+  p_try <- max(floor(p * p_subset_frac), 1)
+
+  alpha <- get_alpha(p)
   best_beta <- beta
   best_obj <- obj
   best_gamma <- gamma
@@ -347,8 +360,12 @@ annealscore <- function(X, y, gamma, beta, weights, lambda0 = 0,
 #' @param seed An integer that is used as argument by `set.seed()` for
 #'    offsetting the random number generator. Default is to not set a
 #'    particular randomization seed.
-#' @param method A string that specifies which method ("riskcd" or "annealscore") 
+#' @param method A string that specifies which method ("riskcd" or "annealscore")
 #'    to run (default: "annealscore")
+#' @param p_subset_frac Fraction of covariates (rounded down, minimum 1) considered
+#'    as candidate neighbors at each iteration of the `"annealscore"` method's
+#'    residual-guided neighbor generation (default: 0.5). Only used when
+#'    `method = "annealscore"`.
 #' @return An object of class "risk_mod" with the following attributes:
 #'  \item{gamma}{Final scalar value.}
 #'  \item{beta}{Vector of integer coefficients.}
@@ -377,7 +394,7 @@ annealscore <- function(X, y, gamma, beta, weights, lambda0 = 0,
 risk_mod <- function(X, y, gamma = NULL, beta = NULL, weights = NULL,
                      n_train_runs = 1, lambda0 = 0, a = -10, b = 10,
                      max_iters = 10000,  tol = 1e-5, shuffle = TRUE, seed = NULL,
-                     method = "annealscore") {
+                     method = "annealscore", p_subset_frac = 0.5) {
 
   # Check valid method
   if (is.null(method) || !(method %in% c("annealscore", "riskcd"))) {
@@ -435,7 +452,7 @@ risk_mod <- function(X, y, gamma = NULL, beta = NULL, weights = NULL,
 
   # Function to run coordinate descent with initialization
   run_risk_mod <- function(X, y, gamma, beta, weights, lambda0, a, b,
-                           max_iters, tol, shuffle) {
+                           max_iters, tol, shuffle, p_subset_frac) {
     # If initial gamma is null but have betas then use update function
     if (is.null(gamma) & (!is.null(beta))){
       upd <- update_gamma_intercept(X, y, beta, weights)
@@ -471,7 +488,8 @@ risk_mod <- function(X, y, gamma = NULL, beta = NULL, weights = NULL,
     
     # Run appropriate method to estimate betas
     if (method == "annealscore") {
-      res <- annealscore(X, y, gamma, beta, weights, lambda0, a, b, max_iters, tol)
+      res <- annealscore(X, y, gamma, beta, weights, lambda0, a, b, max_iters, tol,
+                         p_subset_frac)
     }
     if (method == "riskcd") {
       res <- risk_coord_desc(X, y, gamma, beta, weights, lambda0, a, b, max_iters,
@@ -492,7 +510,7 @@ risk_mod <- function(X, y, gamma = NULL, beta = NULL, weights = NULL,
   # Run n_train_runs to find the best model
   for (i in 1:n_train_runs) {
     curr_mod <- run_risk_mod(X, y, gamma, beta, weights, lambda0, a, b,
-                             max_iters, tol, shuffle)
+                             max_iters, tol, shuffle, p_subset_frac)
     curr_obj_fn <- obj_fcn(X, y, curr_mod$gamma, curr_mod$beta, weights, lambda0)
 
     if (curr_obj_fn < min_obj_fn) {

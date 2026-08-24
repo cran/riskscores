@@ -70,6 +70,16 @@ coef.risk_mod <- function(object, ...) {
 #'  scale of the predictors (i.e. log-odds); the "response" type is on the scale
 #'  of the response variable (i.e. risk probabilities); the "score" type returns
 #'  the risk score calculated from the integer model.
+#' @param target_prevalence Optional numeric scalar. If provided (and
+#'  `type = "response"`), predicted probabilities are recalibrated to this
+#'  target outcome prevalence via [prevalence_adjust()] before being returned.
+#'  Useful when applying a model fit on one population (e.g. a case-control or
+#'  enriched study sample) to a target population with a different outcome
+#'  prevalence.
+#' @param study_prevalence Optional numeric scalar giving the outcome
+#'  prevalence in the sample used to fit `object`. Only used when
+#'  `target_prevalence` is provided. Defaults to `mean(object$y)`, the
+#'  prevalence observed in the model's training data.
 #' @param ... Additional arguments.
 #' @return Numeric vector of predicted values.
 #' @examples
@@ -80,9 +90,11 @@ coef.risk_mod <- function(object, ...) {
 #' predict(mod, type = "link")[1]
 #' predict(mod, type = "response")[1]
 #' predict(mod, type = "score")[1]
+#' predict(mod, type = "response", target_prevalence = 0.10)[1]
 #' @export
 predict.risk_mod <- function(object, newx = NULL,
-                             type = c("link", "response", "score"), ...) {
+                             type = c("link", "response", "score"),
+                             target_prevalence = NULL, study_prevalence = NULL, ...) {
 
   if (is.null(newx)) {
 
@@ -122,6 +134,11 @@ predict.risk_mod <- function(object, newx = NULL,
   if (type == "link") {
     return(v)
   } else if (type == "response") {
+    if (!is.null(target_prevalence)) {
+      if (is.null(study_prevalence)) study_prevalence <- mean(object$y)
+      p <- prevalence_adjust(p, study_prevalence = study_prevalence,
+                             target_prevalence = target_prevalence)
+    }
     return(p)
   } else if (type == "score") {
     return(X[,-1] %*% object$beta[-1])
@@ -170,18 +187,24 @@ plot.risk_mod <- function(x, score_min = NULL, score_max = NULL, ...) {
 
 #' Plot Risk Score Cross-Validation Results
 #'
-#' Plots the mean auc for each \eqn{lambda_0} tested during cross-validation.
+#' Plots the mean value of the optimized metric (AUC or AUPRC) for each
+#' \eqn{lambda_0} tested during cross-validation.
 #' @param x An object of class "cv_risk_mod", usually a result of a call to
 #' [cv_risk_mod()].
 #' @param ... Additional arguments affecting the plot produced
 #' @return Object of class "ggplot".
 #' @export
 plot.cv_risk_mod <- function(x, ...) {
-  
-  # get mean/sd auc of lambda_min
-  min_mean <- x$results$mean_auc[x$results$lambda0 == x$lambda_min]
-  min_sd <- x$results$sd_auc[x$results$lambda0 == x$lambda_min]
-  
+
+  metric <- if (!is.null(x$optimize_metric)) x$optimize_metric else "auc"
+  mean_col <- paste0("mean_", metric)
+  sd_col   <- paste0("sd_",   metric)
+  y_label  <- toupper(metric)
+
+  # get mean/sd of the optimized metric at lambda_min
+  min_mean <- x$results[[mean_col]][x$results$lambda0 == x$lambda_min]
+  min_sd   <- x$results[[sd_col]][x$results$lambda0 == x$lambda_min]
+
   # define x axis breaks
   lambda_grid <- log(x$results$lambda0)
   nlambda <- length(lambda_grid)
@@ -191,28 +214,35 @@ plot.cv_risk_mod <- function(x, ...) {
     lambda_grid <- lambda_grid[seq(1, nlambda, new_n)]
     nonzero_seq[-seq(1, nlambda, new_n)] <- ""
   }
-  
+
+  # add generic column names to avoid aes() scoping issues
+  plot_data <- x$results
+  plot_data$mean_metric <- x$results[[mean_col]]
+  plot_data$sd_metric   <- x$results[[sd_col]]
+  plot_data$nonzero_seq <- nonzero_seq
+
+  y_max_label <- (max(plot_data$mean_metric) + max(plot_data$sd_metric)) * 1.01
+
   # create plot
-  lambda0 = mean_auc = sd_auc = NULL # set global variables
-  cv_plot <- ggplot2::ggplot(x$results, ggplot2::aes(x = log(lambda0), y = mean_auc)) +
+  lambda0 = mean_metric = sd_metric = nonzero_seq_col = NULL # set global variables
+  cv_plot <- ggplot2::ggplot(plot_data, ggplot2::aes(x = log(lambda0), y = mean_metric)) +
     ggplot2::geom_point() +
-    ggplot2::geom_linerange(ggplot2::aes(ymin = mean_auc - sd_auc, ymax= mean_auc + sd_auc)) +
+    ggplot2::geom_linerange(ggplot2::aes(ymin = mean_metric - sd_metric,
+                                         ymax = mean_metric + sd_metric)) +
     ggplot2::geom_point(ggplot2::aes(x = log(x$lambda_min), y = min_mean), color = "red") +
-    ggplot2::geom_linerange(ggplot2::aes(x = log(x$lambda_min), ymin = min_mean - min_sd,
-                                         ymax= min_mean + min_sd), color = "red", inherit.aes = FALSE) +
+    ggplot2::geom_linerange(ggplot2::aes(x = log(x$lambda_min),
+                                         ymin = min_mean - min_sd,
+                                         ymax = min_mean + min_sd),
+                            color = "red", inherit.aes = FALSE) +
     ggplot2::geom_hline(yintercept = min_mean - min_sd, linetype = "dashed", color = "red") +
-    
-    ggplot2::geom_text(ggplot2::aes(x = log(lambda0), label = nonzero_seq,
-                                    y = (max(mean_auc) + max(sd_auc))*1.01),
+    ggplot2::geom_text(ggplot2::aes(x = log(lambda0), label = nonzero_seq, y = y_max_label),
                        size = 3, col = 'grey30') +
-    
     ggplot2::scale_x_continuous(breaks = lambda_grid, labels = round(lambda_grid, 1)) +
-    ggplot2::labs(x = "Log Lambda", y = "AUC") +
+    ggplot2::labs(x = "Log Lambda", y = y_label) +
     ggplot2::theme_bw() +
     ggplot2::theme(panel.grid.minor = ggplot2::element_blank(),
                    axis.text.x = ggplot2::element_text(angle = 45, vjust = 1, hjust=1))
-  
-  
+
   return(cv_plot)
 }
 

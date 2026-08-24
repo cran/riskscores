@@ -16,5 +16,6 @@
 Object of class "ggplot".
 }
 \description{
-Plots the mean auc for each \eqn{lambda_0} tested during cross-validation.
+Plots the mean value of the optimized metric (AUC or AUPRC) for each
+\eqn{lambda_0} tested during cross-validation.
 }

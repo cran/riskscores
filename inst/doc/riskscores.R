@@ -31,7 +31,8 @@ foldids <- stratify_folds(y, nfolds = 5, seed = 5)
 
 
 ## -----------------------------------------------------------------------------
-cv_results <- cv_risk_mod(X, y, foldids = foldids, nlambda = 25)
+cv_results <- cv_risk_mod(X, y, foldids = foldids, nlambda = 10, 
+                          max_iters = 500)
 
 ## ---- fig.width = 5, fig.height = 3, dpi = 125--------------------------------
 plot(cv_results)
@@ -104,6 +105,10 @@ data.frame(X[1:5,which(dimnames(X)[[2]] %in% c("ClumpThickness",
   kable_styling("striped", full_width = F) %>%
   add_header_above(c("Covariates" = 4, "Prediction" = 3))
 
+
+## -----------------------------------------------------------------------------
+# rescale predictions as if the target population had 10% prevalence
+predict(mod, type = "response", target_prevalence = 0.10)[1:5]
 
 ## -----------------------------------------------------------------------------
 plot(mod, score_min = 30, score_max = 300)

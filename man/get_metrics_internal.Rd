@@ -36,9 +36,9 @@ from the risk score model ("score"). Default: "response".}
 }
 \value{
 List with deviance (dev), accuracy (acc), sensitivity (sens),
-specificity (spec), and auc.
+specificity (spec), auc, and auprc.
 }
 \description{
-Calculates a risk model's deviance, accuracy, sensitivity, and specificity
-given a set of data and a threshold value.
+Calculates a risk model's deviance, accuracy, sensitivity, specificity,
+AUC, and AUPRC given a set of data and a threshold value.
 }
